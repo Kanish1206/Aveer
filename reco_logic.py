@@ -1,14 +1,17 @@
 import pandas as pd
-import numpy as np
 import re
 from rapidfuzz import process, fuzz
 
 
 # --------------------------------------------------
-# Helpers
+# Helper: Normalize Document Number
 # --------------------------------------------------
-def normalize_doc_no(x: str) -> str:
-    
+def normalize_doc_no(x) -> str:
+    """
+    Normalize invoice/document numbers for robust matching.
+    Example:
+    '002/2025-02' -> '2 2025 2'
+    """
     if pd.isna(x):
         return ""
 
@@ -20,11 +23,10 @@ def normalize_doc_no(x: str) -> str:
     # Extract numeric tokens
     nums = re.findall(r"\d+", x)
 
-    # Remove leading zeros safely
     clean_nums = []
     for n in nums:
         try:
-            clean_nums.append(str(int(n)))
+            clean_nums.append(str(int(n)))  # remove leading zeros
         except ValueError:
             pass
 
@@ -32,15 +34,21 @@ def normalize_doc_no(x: str) -> str:
 
 
 # --------------------------------------------------
-# Core Reconciliation Function
+# Core Reconciliation Engine
 # --------------------------------------------------
 def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> pd.DataFrame:
     """
-    GST 2B vs Purchase Register reconciliation engine
+    GST 2B vs Purchase Register reconciliation
     """
 
     # --------------------------------------------------
-    # 1. REQUIRED COLUMNS CHECK
+    # 1. Column cleanup (VERY IMPORTANT)
+    # --------------------------------------------------
+    gst.columns = gst.columns.str.strip()
+    pur.columns = pur.columns.str.strip()
+
+    # --------------------------------------------------
+    # 2. Required columns validation
     # --------------------------------------------------
     gst_required = [
         "GSTIN of supplier",
@@ -72,7 +80,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
         raise ValueError(f"Missing columns in Books file: {missing_pur}")
 
     # --------------------------------------------------
-    # 2. CLEANING
+    # 3. Cleaning & normalization
     # --------------------------------------------------
     gst["Invoice number"] = gst["Invoice number"].astype(str)
     pur["Reference Document No."] = pur["Reference Document No."].astype(str)
@@ -81,18 +89,17 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
     pur["Doc_norm"] = pur["Reference Document No."].apply(normalize_doc_no)
 
     # --------------------------------------------------
-    # 3. AGGREGATION
+    # 4. Aggregation
     # --------------------------------------------------
     gst_agg = (
         gst.groupby(["GSTIN of supplier", "Doc_norm"], as_index=False)
         .agg(
+            Doc_No_2B=("Invoice number", "first"),
             Supplier_Name_2B=("Trade/Legal name", "first"),
-            Doc_No=("Invoice number","first"),
             Invoice_Date_2B=("Invoice Date", "first"),
             IGST_2B=("Integrated Tax(₹)", "sum"),
             CGST_2B=("Central Tax(₹)", "sum"),
             SGST_2B=("State/UT Tax(₹)", "sum"),
-            #Doc_norm=("Doc_norm", "first"),
         )
     )
 
@@ -102,23 +109,17 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
             as_index=False,
         )
         .agg(
+            Doc_No_PUR=("Reference Document No.", "first"),
             Supplier_Name_PUR=("Vendor/Customer Name", "first"),
-            Doc_No=("Reference Document No.","first"),
             IGST_PUR=("IGST(Cr)", "sum"),
             CGST_PUR=("CGST(Cr)", "sum"),
             SGST_PUR=("SGST(Cr)", "sum"),
-            #Doc_norm=("Doc_norm", "first"),
         )
-        .rename(
-            columns={
-                "Supplier GSTIN": "GSTIN of supplier",
-                "Reference Document No.": "Invoice number",
-            }
-        )
+        .rename(columns={"Supplier GSTIN": "GSTIN of supplier"})
     )
 
     # --------------------------------------------------
-    # 4. EXACT MATCH
+    # 5. Exact Match (GSTIN + Normalized Doc No)
     # --------------------------------------------------
     merged = gst_agg.merge(
         pur_agg,
@@ -128,7 +129,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
         indicator=True,
     )
 
-   merged["Match_Status"] = pd.Categorical(
+    merged["Match_Status"] = pd.Categorical(
         merged["_merge"].map({
             "both": "Exact Match",
             "left_only": "Open in 2B",
@@ -146,7 +147,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
     merged["Fuzzy_Score"] = 0
 
     # --------------------------------------------------
-    # 5. FUZZY MATCH (GSTIN SCOPED)
+    # 6. Fuzzy Matching (GSTIN scoped)
     # --------------------------------------------------
     left_df = merged[merged["_merge"] == "left_only"].copy()
     right_df = merged[merged["_merge"] == "right_only"].copy()
@@ -163,6 +164,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
 
         for left_idx, row in left_subset.iterrows():
             query = row["Doc_norm"]
+
             if not query:
                 continue
 
@@ -180,14 +182,14 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
                 if right_idx in used_right_indices:
                     continue
 
-                # Mark fuzzy match
+                # Assign fuzzy match
                 merged.loc[left_idx, "Match_Status"] = "Fuzzy Match"
                 merged.loc[left_idx, "Matched_Doc_no_other_side"] = merged.loc[
-                    right_idx, "Invoice number"
+                    right_idx, "Doc_No_PUR"
                 ]
                 merged.loc[left_idx, "Fuzzy_Score"] = score
 
-                # Copy PUR columns
+                # Copy Purchase values
                 pur_cols = [c for c in merged.columns if c.endswith("_PUR")]
                 for c in pur_cols:
                     merged.loc[left_idx, c] = merged.loc[right_idx, c]
@@ -195,25 +197,15 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
                 used_right_indices.add(right_idx)
 
     # --------------------------------------------------
-    # 6. DIFFERENCE CALCULATION
+    # 7. Difference Calculation
     # --------------------------------------------------
     merged["Diff_IGST"] = merged["IGST_PUR"].fillna(0) - merged["IGST_2B"].fillna(0)
     merged["Diff_CGST"] = merged["CGST_PUR"].fillna(0) - merged["CGST_2B"].fillna(0)
     merged["Diff_SGST"] = merged["SGST_PUR"].fillna(0) - merged["SGST_2B"].fillna(0)
 
     # --------------------------------------------------
-    # 7. CLEANUP
+    # 8. Cleanup
     # --------------------------------------------------
     merged.drop(columns=["_merge", "Doc_norm"], errors="ignore", inplace=True)
 
     return merged
-
-
-
-
-
-
-
-
-
-
