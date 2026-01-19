@@ -132,7 +132,14 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
         "both": "Exact Match",
         "left_only": "Open in 2B",
         "right_only": "Open in Books",
-    })
+    }),
+      categories=[
+        "Exact Match",
+        "Fuzzy Match",
+        "Open in 2B",
+        "Open in Books",
+    ],
+)
 
     merged["Matched_Doc_no_other_side"] = None
     merged["Fuzzy_Score"] = 0
@@ -199,6 +206,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
     merged.drop(columns=["_merge", "Doc_norm"], errors="ignore", inplace=True)
 
     return merged
+
 
 
 
