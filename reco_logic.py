@@ -130,7 +130,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
         indicator=True,
     )
 
-    merged["Match_Status"] = merged["_merge"]._bt.map({
+    merged["Match_Status"] = merged["_merge"].map({
         "both": "Exact Match",
         "left_only": "Open in 2B",
         "right_only": "Open in Books",
@@ -201,3 +201,4 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
     merged.drop(columns=["_merge", "Doc_norm"], errors="ignore", inplace=True)
 
     return merged
+
