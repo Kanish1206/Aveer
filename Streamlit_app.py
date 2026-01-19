@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
-import reco_logic as reco_logic
+import reco logic as reco_logic
 
 # --------------------------------------------------
 # 1. Page Configuration
@@ -190,3 +190,4 @@ else:
 # --------------------------------------------------
 st.markdown("---")
 st.caption("GST Reconciliation Tool v2.0 | Built with Streamlit")
+
