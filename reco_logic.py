@@ -119,4 +119,10 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
         )
     )
 
+if merged is None or merged.empty:
+        raise ValueError("Reconciliation produced no output. Check input data.")
+
+    return merged
+
     # ---------------------------------
+
