@@ -1,13 +1,13 @@
 import streamlit as st
 import pandas as pd
 import io
-import reco logic as reco_logic
+import reco_logic as reco_logic
 
 # --------------------------------------------------
 # 1. Page Configuration
 # --------------------------------------------------
 st.set_page_config(
-    page_title="GST Reco Pro",
+    page_title="Aveer Food GST Reco Pro",
     page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -190,4 +190,5 @@ else:
 # --------------------------------------------------
 st.markdown("---")
 st.caption("GST Reconciliation Tool v2.0 | Built with Streamlit")
+
 
