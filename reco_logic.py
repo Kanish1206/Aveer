@@ -91,7 +91,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
         gst.groupby(["GSTIN of supplier", "Doc_norm"], as_index=False)
         .agg(
             Supplier_Name_2B=("Trade/Legal name", "first"),
-            Doc_No.=("Invoice number","first"),
+            Doc_No=("Invoice number","first"),
             Invoice_Date_2B=("Invoice Date", "first"),
             IGST_2B=("Integrated Tax(₹)", "sum"),
             CGST_2B=("Central Tax(₹)", "sum"),
@@ -107,7 +107,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
         )
         .agg(
             Supplier_Name_PUR=("Vendor/Customer Name", "first"),
-            Doc_No.=("Reference Document No.","first"),
+            Doc_No=("Reference Document No.","first"),
             IGST_PUR=("IGST(Cr)", "sum"),
             CGST_PUR=("CGST(Cr)", "sum"),
             SGST_PUR=("SGST(Cr)", "sum"),
@@ -203,6 +203,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
     merged.drop(columns=["_merge", "Doc_norm"], errors="ignore", inplace=True)
 
     return merged
+
 
 
 
