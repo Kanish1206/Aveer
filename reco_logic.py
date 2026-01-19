@@ -8,11 +8,7 @@ from rapidfuzz import process, fuzz
 # Helpers
 # --------------------------------------------------
 def normalize_doc_no(x: str) -> str:
-    """
-    Normalizes invoice / document numbers for fuzzy matching
-    Example:
-    002/2025-02 -> "2 2025 2"
-    """
+    
     if pd.isna(x):
         return ""
 
@@ -126,7 +122,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
     # --------------------------------------------------
     merged = gst_agg.merge(
         pur_agg,
-        on=["GSTIN of supplier", "Invoice number"],
+        on=["GSTIN of supplier", "Doc_norm"],
         how="outer",
         suffixes=("_2B", "_PUR"),
         indicator=True,
@@ -203,6 +199,7 @@ def process_reco(gst: pd.DataFrame, pur: pd.DataFrame, threshold: int = 90) -> p
     merged.drop(columns=["_merge", "Doc_norm"], errors="ignore", inplace=True)
 
     return merged
+
 
 
 
