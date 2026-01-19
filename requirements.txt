@@ -6,3 +6,5 @@ pyxlsb
 fastexcel
 rapidfuzz
 python-calamine
+openpyxl
+
