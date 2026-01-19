@@ -20,42 +20,42 @@ def process_reco(gst, pur,threshold):
     
     # --- Aggregation ---
     gst_agg = (
-        gst.groupby(["Supplier GSTIN", "Document Number"], as_index=False)
+        gst.groupby(["GSTIN of supplier", "Invoice number"], as_index=False)
            .agg({
-               "Supplier Name" : "first",
-               "Return Period" : "first",
-               "Document Date": "first",
-               "IGST Amount" : "sum",
-               "CGST Amount" : "sum",
-               "SGST Amount"  : "sum",
-               "Invoice Value" : "sum"
+               "Trade/Legal name" : "first",
+               "Remark 2B" : "first",
+               "Invoice Date": "first",
+               "Integrated Tax(₹)" : "sum",
+               "Central Tax(₹)" : "sum",
+               "State/UT Tax(₹)"  : "sum",
+               #"Invoice Value" : "sum"
            })
     )
 
     pur_agg = (
-        pur.groupby(["GSTIN Of Vendor/Customer","Reference Document No.","FI Document Number"], as_index=False)
+        pur.groupby(["Supplier GSTIN","Reference Document No.","FI Document Number"], as_index=False)
            .agg({
                "Return Period": "first",
                "Vendor/Customer Name" : "first",
                "Reference Document No.": "first",
                "FI Document Number": "first",
-               "IGST Amount": "sum",
-               "CGST Amount": "sum",
-               "SGST Amount": "sum",
-               "Invoice Value": "sum"
+               "IGST(Cr)": "sum",
+               "CGST(Cr)": "sum",
+               "SGST(Cr)": "sum",
+               #"Invoice Value": "sum"
            })
     )
 
     # Align Column Names
-    pur_agg = pur_agg.rename(columns={"GSTIN Of Vendor/Customer": "Supplier GSTIN", 
-                                      "Reference Document No.": "Document Number"})
+    pur_agg = pur_agg.rename(columns={"Supplier GSTIN": "GSTIN of supplier", 
+                                      "Reference Document No.": "Invoice number"})
 
     # --- Initial Merge ---
     #def process_reco(gst_agg, pur_agg):
     # 1. --- Initial Exact Match ---
     merged = gst_agg.merge(
         pur_agg,
-        on=["Supplier GSTIN", "Document Number"],
+        on=["GSTIN of supplier", "Invoice number"],
         how="outer",
         suffixes=("_2B", "_PUR"),
         indicator=True
@@ -110,8 +110,8 @@ def process_reco(gst, pur,threshold):
 
 
    for gstin_val in common_gstins:
-    left_subset = left_only_df[left_only_df['Supplier GSTIN'] == gstin_val]
-    right_subset = right_only_df[right_only_df['Supplier GSTIN'] == gstin_val]
+    left_subset = left_only_df[left_only_df['GSTIN of supplier'] == gstin_val]
+    right_subset = right_only_df[right_only_df['GSTIN of supplier'] == gstin_val]
 
     if not left_subset.empty and not right_subset.empty:
         right_choices_series = right_subset['Document Number_norm']
@@ -152,3 +152,4 @@ def process_reco(gst, pur,threshold):
 
     # Drop the internal pandas _merge column before returning
     return merged_diagnose
+
