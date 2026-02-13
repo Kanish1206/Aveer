@@ -1,10 +1,3 @@
-streamlit
-polars
-pandas
-xlsxwriter
-pyxlsb
-fastexcel
-rapidfuzz
-python-calamine
-openpyxl
-
+streamlit==1.32.2
+pandas==2.2.1
+openpyxl==3.1.2
