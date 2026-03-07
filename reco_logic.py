@@ -74,11 +74,12 @@ def process_reco(gst_df, pur_df,
                  tax_tolerance=10,
                  gstin_tolerance=20):
 
-    # ---------------- CLEAN COLUMN NAMES ----------------
     gst = clean_columns(gst_df.copy())
     pur = clean_columns(pur_df.copy())
 
-    # ---------------- REQUIRED COLUMNS ----------------
+    # -------------------------------------------------
+    # REQUIRED COLUMNS
+    # -------------------------------------------------
     gst_required = [
         "Supplier GSTIN",
         "Document Number",
@@ -107,22 +108,34 @@ def process_reco(gst_df, pur_df,
         if col not in pur.columns:
             raise ValueError(f"Books missing column: {col}")
 
-    # ---------------- NORMALIZE DOC ----------------
+    # -------------------------------------------------
+    # NORMALIZE DOC
+    # -------------------------------------------------
     gst["doc_norm"] = normalize_doc(gst["Document Number"])
     pur["doc_norm"] = normalize_doc(pur["Reference Document No."])
 
-    # ---------------- NUMERIC CLEAN ----------------
+    # -------------------------------------------------
+    # CLEAN NUMERIC
+    # -------------------------------------------------
     gst = clean_numeric(gst, [
-        "Taxable Value","IGST Amount","CGST Amount",
-        "SGST Amount","Invoice Value"
+        "Taxable Value",
+        "IGST Amount",
+        "CGST Amount",
+        "SGST Amount",
+        "Invoice Value"
     ])
 
     pur = clean_numeric(pur, [
-        "Taxable Amount","IGST Amount","CGST Amount",
-        "SGST Amount","Invoice Value"
+        "Taxable Amount",
+        "IGST Amount",
+        "CGST Amount",
+        "SGST Amount",
+        "Invoice Value"
     ])
 
-    # ---------------- DUPLICATE DETECTION ----------------
+    # -------------------------------------------------
+    # DUPLICATE DETECTION
+    # -------------------------------------------------
     gst = detect_duplicates(
         gst,
         ["Supplier GSTIN","doc_norm","Invoice Value"]
@@ -133,7 +146,9 @@ def process_reco(gst_df, pur_df,
         ["GSTIN Of Vendor/Customer","doc_norm","Invoice Value"]
     )
 
-    # ---------------- GSTIN ALIGN ----------------
+    # -------------------------------------------------
+    # GSTIN ALIGN
+    # -------------------------------------------------
     pur["Vendor/Customer GSTIN"] = pur["GSTIN Of Vendor/Customer"]
 
     pur.rename(
@@ -141,12 +156,13 @@ def process_reco(gst_df, pur_df,
         inplace=True
     )
 
-    # ---------------- AGGREGATION ----------------
+    # -------------------------------------------------
+    # AGGREGATION
+    # -------------------------------------------------
     gst_agg = gst.groupby(
         ["Supplier GSTIN","doc_norm"],
         as_index=False
     ).agg({
-
         "Document Number":"first",
         "Taxable Value":"sum",
         "IGST Amount":"sum",
@@ -160,7 +176,6 @@ def process_reco(gst_df, pur_df,
         ["Supplier GSTIN","doc_norm"],
         as_index=False
     ).agg({
-
         "Reference Document No.":"first",
         "Taxable Amount":"sum",
         "IGST Amount":"sum",
@@ -171,9 +186,10 @@ def process_reco(gst_df, pur_df,
         "Duplicate Flag":"first"
     })
 
-    # ---------------- MERGE ----------------
+    # -------------------------------------------------
+    # MERGE
+    # -------------------------------------------------
     merged = gst_agg.merge(
-
         pur_agg,
         on=["Supplier GSTIN","doc_norm"],
         how="outer",
@@ -181,37 +197,41 @@ def process_reco(gst_df, pur_df,
         indicator=True
     )
 
-    # ---------------- DIFF CALC ----------------
+    # -------------------------------------------------
+    # DIFF CALCULATION
+    # -------------------------------------------------
     merged["Invoice Diff"] = (
-        merged["Invoice Value_PUR"]
-        - merged["Invoice Value_2B"]
+        merged["Invoice Value_PUR"] -
+        merged["Invoice Value_2B"]
     )
 
     merged["Taxable Diff"] = (
-        merged["Taxable Amount"]
-        - merged["Taxable Value"]
+        merged["Taxable Amount"] -
+        merged["Taxable Value"]
     )
 
     merged["IGST Diff"] = (
-        merged["IGST Amount_PUR"]
-        - merged["IGST Amount_2B"]
+        merged["IGST Amount_PUR"] -
+        merged["IGST Amount_2B"]
     )
 
     merged["CGST Diff"] = (
-        merged["CGST Amount_PUR"]
-        - merged["CGST Amount_2B"]
+        merged["CGST Amount_PUR"] -
+        merged["CGST Amount_2B"]
     )
 
     merged["SGST Diff"] = (
-        merged["SGST Amount_PUR"]
-        - merged["SGST Amount_2B"]
+        merged["SGST Amount_PUR"] -
+        merged["SGST Amount_2B"]
     )
 
-    # ---------------- STATUS ----------------
+    # -------------------------------------------------
+    # MATCH STATUS
+    # -------------------------------------------------
     merged["Match_Status"] = None
     merged["Fuzzy Score"] = 0
 
-    both = merged["_merge"]=="both"
+    both = merged["_merge"] == "both"
 
     tax_condition = (
         merged["Invoice Diff"].abs() <= tax_tolerance
@@ -220,66 +240,56 @@ def process_reco(gst_df, pur_df,
     )
 
     merged.loc[both & tax_condition,"Match_Status"]="Exact Match"
-
     merged.loc[both & ~tax_condition,"Match_Status"]="Value Mismatch"
-
-    merged.loc[
-        merged["_merge"]=="left_only",
-        "Match_Status"
-    ]="Open in 2B"
-
-    merged.loc[
-        merged["_merge"]=="right_only",
-        "Match_Status"
-    ]="Open in Books"
+    merged.loc[merged["_merge"]=="left_only","Match_Status"]="Open in 2B"
+    merged.loc[merged["_merge"]=="right_only","Match_Status"]="Open in Books"
 
     # -------------------------------------------------
-    # 6️⃣ FUZZY MATCH
+    # FUZZY MATCHING (FIXED)
     # -------------------------------------------------
-    # -------------------------------------------------
-# 6️⃣ FIXED FUZZY MATCH
-# -------------------------------------------------
+    open_2b = merged[merged["Match_Status"]=="Open in 2B"]
+    open_books = merged[merged["Match_Status"]=="Open in Books"]
 
-open_2b = merged[merged["Match_Status"] == "Open in 2B"]
-open_books = merged[merged["Match_Status"] == "Open in Books"]
+    for left_idx in open_2b.index:
 
-for left_idx in open_2b.index:
+        left_doc = merged.at[left_idx,"doc_norm"]
+        left_val = merged.at[left_idx,"Invoice Value_2B"]
 
-    left_doc = merged.at[left_idx, "doc_norm"]
-    left_val = merged.at[left_idx, "Invoice Value_2B"]
+        candidates = open_books[
+            (open_books["Invoice Value_PUR"] - left_val).abs()
+            <= tax_tolerance
+        ]
 
-    # 🔹 Reduce search space using invoice value
-    candidates = open_books[
-        (open_books["Invoice Value_PUR"] - left_val).abs() <= tax_tolerance
+        if candidates.empty:
+            continue
+
+        candidate_docs = candidates["doc_norm"].tolist()
+        candidate_index = candidates.index.tolist()
+
+        match = process.extractOne(
+            left_doc,
+            candidate_docs,
+            scorer=fuzz.ratio
+        )
+
+        if match and match[1] >= doc_threshold:
+
+            matched_doc,score,position = match
+            right_idx = candidate_index[position]
+
+            merged.at[left_idx,"Match_Status"]="Fuzzy Match"
+            merged.at[left_idx,"Fuzzy Score"]=score
+
+            merged.at[right_idx,"Match_Status"]="Fuzzy Consumed"
+
+            open_books = open_books.drop(right_idx)
+
+    merged = merged[
+        merged["Match_Status"]!="Fuzzy Consumed"
     ]
 
-    if candidates.empty:
-        continue
-
-    candidate_docs = candidates["doc_norm"].tolist()
-    candidate_index = candidates.index.tolist()
-
-    match = process.extractOne(
-        left_doc,
-        candidate_docs,
-        scorer=fuzz.ratio
-    )
-
-    if match and match[1] >= doc_threshold:
-
-        matched_doc, score, position = match
-        right_idx = candidate_index[position]
-
-        merged.at[left_idx, "Match_Status"] = "Fuzzy Match"
-        merged.at[left_idx, "Fuzzy Score"] = score
-
-        merged.at[right_idx, "Match_Status"] = "Fuzzy Consumed"
-
-        # remove matched row from candidate pool
-        open_books = open_books.drop(right_idx)
-
     # -------------------------------------------------
-    # 7️⃣ GSTIN MISMATCH
+    # GSTIN MISMATCH
     # -------------------------------------------------
     open_2b = merged[merged["Match_Status"]=="Open in 2B"]
     open_books = merged[merged["Match_Status"]=="Open in Books"]
@@ -305,4 +315,3 @@ for left_idx in open_2b.index:
     merged.drop(columns="_merge",inplace=True)
 
     return merged
-
