@@ -236,32 +236,47 @@ def process_reco(gst_df, pur_df,
     # -------------------------------------------------
     # 6️⃣ FUZZY MATCH
     # -------------------------------------------------
-    open_2b = merged[merged["Match_Status"]=="Open in 2B"]
-    open_books = merged[merged["Match_Status"]=="Open in Books"]
+    # -------------------------------------------------
+# 6️⃣ FIXED FUZZY MATCH
+# -------------------------------------------------
 
-    book_docs = open_books["doc_norm"].tolist()
-    book_idx = open_books.index.tolist()
+open_2b = merged[merged["Match_Status"] == "Open in 2B"]
+open_books = merged[merged["Match_Status"] == "Open in Books"]
 
-    for idx,row in open_2b.iterrows():
+for left_idx in open_2b.index:
 
-        match = process.extractOne(
-            row["doc_norm"],
-            book_docs,
-            scorer=fuzz.ratio,
-            score_cutoff=doc_threshold
-        )
+    left_doc = merged.at[left_idx, "doc_norm"]
+    left_val = merged.at[left_idx, "Invoice Value_2B"]
 
-        if match:
+    # 🔹 Reduce search space using invoice value
+    candidates = open_books[
+        (open_books["Invoice Value_PUR"] - left_val).abs() <= tax_tolerance
+    ]
 
-            _,score,pos = match
-            right = book_idx[pos]
+    if candidates.empty:
+        continue
 
-            merged.at[idx,"Match_Status"]="Fuzzy Match"
-            merged.at[idx,"Fuzzy Score"]=score
+    candidate_docs = candidates["doc_norm"].tolist()
+    candidate_index = candidates.index.tolist()
 
-            merged.at[right,"Match_Status"]="Fuzzy Consumed"
+    match = process.extractOne(
+        left_doc,
+        candidate_docs,
+        scorer=fuzz.ratio
+    )
 
-    merged = merged[merged["Match_Status"]!="Fuzzy Consumed"]
+    if match and match[1] >= doc_threshold:
+
+        matched_doc, score, position = match
+        right_idx = candidate_index[position]
+
+        merged.at[left_idx, "Match_Status"] = "Fuzzy Match"
+        merged.at[left_idx, "Fuzzy Score"] = score
+
+        merged.at[right_idx, "Match_Status"] = "Fuzzy Consumed"
+
+        # remove matched row from candidate pool
+        open_books = open_books.drop(right_idx)
 
     # -------------------------------------------------
     # 7️⃣ GSTIN MISMATCH
@@ -290,3 +305,4 @@ def process_reco(gst_df, pur_df,
     merged.drop(columns="_merge",inplace=True)
 
     return merged
+
