@@ -2,10 +2,28 @@ import pandas as pd
 import numpy as np
 from rapidfuzz import process, fuzz
 
+
 # -------------------------------------------------
-# 1️⃣ NORMALIZE DOCUMENT NUMBER
+# 1️⃣ CLEAN COLUMN NAMES
+# -------------------------------------------------
+def clean_columns(df):
+
+    df.columns = (
+        df.columns
+        .astype(str)
+        .str.strip()
+        .str.replace("\n","",regex=False)
+        .str.replace("\t","",regex=False)
+    )
+
+    return df
+
+
+# -------------------------------------------------
+# 2️⃣ NORMALIZE DOCUMENT
 # -------------------------------------------------
 def normalize_doc(series):
+
     return (
         series.fillna("")
         .astype(str)
@@ -15,11 +33,12 @@ def normalize_doc(series):
 
 
 # -------------------------------------------------
-# 2️⃣ CLEAN NUMERIC COLUMNS
+# 3️⃣ CLEAN NUMERIC
 # -------------------------------------------------
 def clean_numeric(df, cols):
 
     for col in cols:
+
         if col not in df.columns:
             df[col] = 0
 
@@ -36,166 +55,135 @@ def clean_numeric(df, cols):
 
 
 # -------------------------------------------------
-# 3️⃣ COLUMN VALIDATION
-# -------------------------------------------------
-def validate_columns(df, required_cols, name):
-
-    missing = [c for c in required_cols if c not in df.columns]
-
-    if missing:
-        raise ValueError(f"{name} missing columns: {missing}")
-
-
-# -------------------------------------------------
 # 4️⃣ DUPLICATE DETECTION
 # -------------------------------------------------
 def detect_duplicates(df, keys):
 
-    dup_mask = df.duplicated(subset=keys, keep=False)
+    dup = df.duplicated(subset=keys, keep=False)
 
-    df["Duplicate Flag"] = np.where(
-        dup_mask,
-        "Duplicate",
-        "Unique"
-    )
+    df["Duplicate Flag"] = np.where(dup,"Duplicate","Unique")
 
     return df
 
 
 # -------------------------------------------------
-# 5️⃣ INTELLIGENT INVOICE CLUSTERING
-# -------------------------------------------------
-def create_invoice_clusters(df):
-
-    df["Invoice Cluster"] = (
-        df["Supplier GSTIN"].astype(str)
-        + "_"
-        + df["Invoice Value"].round(0).astype(str)
-    )
-
-    return df
-
-
-# -------------------------------------------------
-# 6️⃣ MAIN RECON ENGINE
+# 5️⃣ MAIN RECON FUNCTION
 # -------------------------------------------------
 def process_reco(gst_df, pur_df,
-                 doc_threshold=80,
+                 doc_threshold=75,
                  tax_tolerance=10,
-                 cluster_tolerance=50):
+                 gstin_tolerance=20):
 
-    gst = gst_df.copy()
-    pur = pur_df.copy()
+    # ---------------- CLEAN COLUMN NAMES ----------------
+    gst = clean_columns(gst_df.copy())
+    pur = clean_columns(pur_df.copy())
 
     # ---------------- REQUIRED COLUMNS ----------------
     gst_required = [
         "Supplier GSTIN",
         "Document Number",
-        "Document Date",
         "Taxable Value",
-        "Invoice Value",
         "IGST Amount",
         "CGST Amount",
         "SGST Amount",
-        "Supplier Name"
+        "Invoice Value"
     ]
 
     pur_required = [
         "GSTIN Of Vendor/Customer",
         "Reference Document No.",
-        "Document Date",
         "Taxable Amount",
-        "Invoice Value",
         "IGST Amount",
         "CGST Amount",
         "SGST Amount",
-        "Vendor/Customer Name"
+        "Invoice Value"
     ]
 
-    validate_columns(gst, gst_required, "2B")
-    validate_columns(pur, pur_required, "Books")
+    for col in gst_required:
+        if col not in gst.columns:
+            raise ValueError(f"2B missing column: {col}")
 
-    # ---------------- RENAME ----------------
-    pur.rename(columns={
-        "GSTIN Of Vendor/Customer": "Supplier GSTIN"
-    }, inplace=True)
+    for col in pur_required:
+        if col not in pur.columns:
+            raise ValueError(f"Books missing column: {col}")
 
     # ---------------- NORMALIZE DOC ----------------
     gst["doc_norm"] = normalize_doc(gst["Document Number"])
     pur["doc_norm"] = normalize_doc(pur["Reference Document No."])
 
-    # ---------------- NUMERIC CLEANING ----------------
-    numeric_cols_gst = [
-        "Invoice Value", "Taxable Value",
-        "IGST Amount", "CGST Amount", "SGST Amount"
-    ]
+    # ---------------- NUMERIC CLEAN ----------------
+    gst = clean_numeric(gst, [
+        "Taxable Value","IGST Amount","CGST Amount",
+        "SGST Amount","Invoice Value"
+    ])
 
-    numeric_cols_pur = [
-        "Invoice Value", "Taxable Amount",
-        "IGST Amount", "CGST Amount", "SGST Amount"
-    ]
-
-    gst = clean_numeric(gst, numeric_cols_gst)
-    pur = clean_numeric(pur, numeric_cols_pur)
+    pur = clean_numeric(pur, [
+        "Taxable Amount","IGST Amount","CGST Amount",
+        "SGST Amount","Invoice Value"
+    ])
 
     # ---------------- DUPLICATE DETECTION ----------------
     gst = detect_duplicates(
         gst,
-        ["Supplier GSTIN", "doc_norm", "Invoice Value"]
+        ["Supplier GSTIN","doc_norm","Invoice Value"]
     )
 
     pur = detect_duplicates(
         pur,
-        ["Supplier GSTIN", "doc_norm", "Invoice Value"]
+        ["GSTIN Of Vendor/Customer","doc_norm","Invoice Value"]
     )
 
-    # ---------------- INVOICE CLUSTERING ----------------
-    gst = create_invoice_clusters(gst)
-    pur = create_invoice_clusters(pur)
+    # ---------------- GSTIN ALIGN ----------------
+    pur["Vendor/Customer GSTIN"] = pur["GSTIN Of Vendor/Customer"]
+
+    pur.rename(
+        columns={"GSTIN Of Vendor/Customer":"Supplier GSTIN"},
+        inplace=True
+    )
 
     # ---------------- AGGREGATION ----------------
     gst_agg = gst.groupby(
-        ["Supplier GSTIN", "doc_norm"],
+        ["Supplier GSTIN","doc_norm"],
         as_index=False
     ).agg({
-        "Document Number": "first",
-        "Document Date": "first",
-        "Supplier Name": "first",
-        "Taxable Value": "sum",
-        "Invoice Value": "sum",
-        "IGST Amount": "sum",
-        "CGST Amount": "sum",
-        "SGST Amount": "sum",
-        "Duplicate Flag": "first"
+
+        "Document Number":"first",
+        "Taxable Value":"sum",
+        "IGST Amount":"sum",
+        "CGST Amount":"sum",
+        "SGST Amount":"sum",
+        "Invoice Value":"sum",
+        "Duplicate Flag":"first"
     })
 
     pur_agg = pur.groupby(
-        ["Supplier GSTIN", "doc_norm"],
+        ["Supplier GSTIN","doc_norm"],
         as_index=False
     ).agg({
-        "Reference Document No.": "first",
-        "Document Date": "first",
-        "Vendor/Customer Name": "first",
-        "Taxable Amount": "sum",
-        "Invoice Value": "sum",
-        "IGST Amount": "sum",
-        "CGST Amount": "sum",
-        "SGST Amount": "sum",
-        "Duplicate Flag": "first"
+
+        "Reference Document No.":"first",
+        "Taxable Amount":"sum",
+        "IGST Amount":"sum",
+        "CGST Amount":"sum",
+        "SGST Amount":"sum",
+        "Invoice Value":"sum",
+        "Vendor/Customer GSTIN":"first",
+        "Duplicate Flag":"first"
     })
 
     # ---------------- MERGE ----------------
     merged = gst_agg.merge(
+
         pur_agg,
-        on=["Supplier GSTIN", "doc_norm"],
+        on=["Supplier GSTIN","doc_norm"],
         how="outer",
-        suffixes=("_2B", "_Books"),
+        suffixes=("_2B","_PUR"),
         indicator=True
     )
 
-    # ---------------- DIFF CALCULATION ----------------
+    # ---------------- DIFF CALC ----------------
     merged["Invoice Diff"] = (
-        merged["Invoice Value_Books"]
+        merged["Invoice Value_PUR"]
         - merged["Invoice Value_2B"]
     )
 
@@ -205,54 +193,56 @@ def process_reco(gst_df, pur_df,
     )
 
     merged["IGST Diff"] = (
-        merged["IGST Amount_Books"]
+        merged["IGST Amount_PUR"]
         - merged["IGST Amount_2B"]
     )
 
     merged["CGST Diff"] = (
-        merged["CGST Amount_Books"]
+        merged["CGST Amount_PUR"]
         - merged["CGST Amount_2B"]
     )
 
     merged["SGST Diff"] = (
-        merged["SGST Amount_Books"]
+        merged["SGST Amount_PUR"]
         - merged["SGST Amount_2B"]
     )
 
-    # ---------------- MATCH STATUS ----------------
+    # ---------------- STATUS ----------------
     merged["Match_Status"] = None
     merged["Fuzzy Score"] = 0
 
-    both = merged["_merge"] == "both"
+    both = merged["_merge"]=="both"
 
-    tolerance_mask = (
+    tax_condition = (
         merged["Invoice Diff"].abs() <= tax_tolerance
     ) & (
         merged["Taxable Diff"].abs() <= tax_tolerance
     )
 
-    merged.loc[both & tolerance_mask,
-               "Match_Status"] = "Exact Match"
+    merged.loc[both & tax_condition,"Match_Status"]="Exact Match"
 
-    merged.loc[both & ~tolerance_mask,
-               "Match_Status"] = "Value Mismatch"
+    merged.loc[both & ~tax_condition,"Match_Status"]="Value Mismatch"
 
-    merged.loc[merged["_merge"] == "left_only",
-               "Match_Status"] = "Open in 2B"
+    merged.loc[
+        merged["_merge"]=="left_only",
+        "Match_Status"
+    ]="Open in 2B"
 
-    merged.loc[merged["_merge"] == "right_only",
-               "Match_Status"] = "Open in Books"
+    merged.loc[
+        merged["_merge"]=="right_only",
+        "Match_Status"
+    ]="Open in Books"
 
     # -------------------------------------------------
-    # 7️⃣ LIGHTNING FAST FUZZY MATCHING
+    # 6️⃣ FUZZY MATCH
     # -------------------------------------------------
-    open_2b = merged[merged["Match_Status"] == "Open in 2B"]
-    open_books = merged[merged["Match_Status"] == "Open in Books"]
+    open_2b = merged[merged["Match_Status"]=="Open in 2B"]
+    open_books = merged[merged["Match_Status"]=="Open in Books"]
 
     book_docs = open_books["doc_norm"].tolist()
-    book_index = open_books.index.tolist()
+    book_idx = open_books.index.tolist()
 
-    for idx, row in open_2b.iterrows():
+    for idx,row in open_2b.iterrows():
 
         match = process.extractOne(
             row["doc_norm"],
@@ -263,44 +253,40 @@ def process_reco(gst_df, pur_df,
 
         if match:
 
-            matched_doc, score, pos = match
-            right_idx = book_index[pos]
+            _,score,pos = match
+            right = book_idx[pos]
 
-            merged.at[idx, "Match_Status"] = "Fuzzy Match"
-            merged.at[idx, "Fuzzy Score"] = score
+            merged.at[idx,"Match_Status"]="Fuzzy Match"
+            merged.at[idx,"Fuzzy Score"]=score
 
-            merged.at[right_idx, "Match_Status"] = "Fuzzy Consumed"
+            merged.at[right,"Match_Status"]="Fuzzy Consumed"
 
-    merged = merged[merged["Match_Status"] != "Fuzzy Consumed"]
+    merged = merged[merged["Match_Status"]!="Fuzzy Consumed"]
 
     # -------------------------------------------------
-    # 8️⃣ GSTIN / VENDOR MISMATCH DETECTION
+    # 7️⃣ GSTIN MISMATCH
     # -------------------------------------------------
-    open_2b = merged[merged["Match_Status"] == "Open in 2B"]
-    open_books = merged[merged["Match_Status"] == "Open in Books"]
+    open_2b = merged[merged["Match_Status"]=="Open in 2B"]
+    open_books = merged[merged["Match_Status"]=="Open in Books"]
 
     for left in open_2b.index:
 
-        doc = merged.at[left, "doc_norm"]
-        val = merged.at[left, "Invoice Value_2B"]
+        doc = merged.at[left,"doc_norm"]
+        val = merged.at[left,"Invoice Value_2B"]
 
         candidates = open_books[
-            open_books["doc_norm"] == doc
+            open_books["doc_norm"]==doc
         ]
 
         for right in candidates.index:
 
-            val_books = merged.at[right,
-                                  "Invoice Value_Books"]
+            val2 = merged.at[right,"Invoice Value_PUR"]
 
-            if abs(val - val_books) <= cluster_tolerance:
+            if abs(val-val2) <= gstin_tolerance:
 
-                merged.at[left,
-                          "Match_Status"] = "GSTIN Mismatch"
+                merged.at[left,"Match_Status"]="GSTIN Mismatch"
+                merged.at[right,"Match_Status"]="GSTIN Mismatch"
 
-                merged.at[right,
-                          "Match_Status"] = "GSTIN Mismatch"
-
-    merged.drop(columns=["_merge"], inplace=True)
+    merged.drop(columns="_merge",inplace=True)
 
     return merged
