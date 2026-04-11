@@ -13,53 +13,81 @@ st.set_page_config(
 # ---------------- CUSTOM CSS ----------------
 st.markdown("""
 <style>
-.main {
-    background-color: #f7f9fc;
-}
-h1 {
-    color: #1f4e79;
-}
-.block-container {
-    padding-top: 2rem;
+
+body {
+    background-color: #f4f7fb;
 }
 
+/* Header */
+.header-box {
+    background: linear-gradient(90deg, #1f4e79, #4fa3d1);
+    padding: 25px;
+    border-radius: 12px;
+    color: white;
+}
+
+/* Card UI */
 .metric-card {
     background: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
+    padding: 22px;
+    border-radius: 14px;
+    box-shadow: 0px 6px 18px rgba(0,0,0,0.08);
     text-align: center;
+    transition: 0.3s;
+}
+.metric-card:hover {
+    transform: translateY(-5px);
 }
 
+/* Upload box */
 .upload-box {
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    border: 2px dashed #d0d7e2;
+    background: #ffffff;
+    padding: 25px;
+    border-radius: 14px;
+    border: 2px dashed #cbd5e1;
     text-align: center;
+    transition: 0.3s;
+}
+.upload-box:hover {
+    border-color: #1f77b4;
+    background: #f0f8ff;
 }
 
+/* Buttons */
 button[kind="primary"] {
-    background-color: #1f77b4;
-    border-radius: 10px;
+    background: linear-gradient(90deg, #1f77b4, #4fa3d1);
+    border-radius: 12px;
+    height: 3em;
+    font-weight: bold;
+    border: none;
+}
+
+/* Download button */
+.stDownloadButton button {
+    background: linear-gradient(90deg, #28a745, #5cd65c) !important;
+    color: white !important;
+    border-radius: 12px;
     height: 3em;
     font-weight: bold;
 }
 
-.stDownloadButton button {
-    background-color: #28a745 !important;
-    color: white !important;
-    border-radius: 10px;
-    height: 3em;
-    font-weight: bold;
+/* Divider spacing */
+hr {
+    margin-top: 30px;
+    margin-bottom: 30px;
 }
+
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------- HEADER ----------------
 st.markdown("""
-<h1>📘 GST Reconciliation Dashboard</h1>
-<p style='color:gray;font-size:16px;'>Compare GSTR-2B with Purchase Register easily</p>
+<div class="header-box">
+    <h1 style="margin-bottom:5px;">📘 GST Reconciliation Dashboard</h1>
+    <p style="margin:0;font-size:16px;">
+        Smart comparison of GSTR-2B & Purchase Register
+    </p>
+</div>
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -92,11 +120,16 @@ if gst_file and pur_file:
         df_books.columns = df_books.columns.str.strip()
 
         st.success("✅ Files uploaded successfully")
+        st.toast("Files ready! Click 'Run Reconciliation' 🚀")
 
         if st.button("🚀 Run Reconciliation", use_container_width=True):
 
+            progress = st.progress(0)
+
             with st.spinner("Processing reconciliation... ⏳"):
+                progress.progress(30)
                 result_df = reco_logic.process_reco(df_2b, df_books)
+                progress.progress(100)
 
             # ---------------- SUMMARY ----------------
             st.subheader("📊 Summary")
@@ -104,23 +137,63 @@ if gst_file and pur_file:
             total = len(result_df)
             matched = result_df["Match_Status"].str.contains("Match", case=False, na=False).sum()
             unmatched = total - matched
+            match_pct = (matched / total * 100) if total else 0
 
             c1, c2, c3 = st.columns(3)
 
             with c1:
-                st.markdown(f"<div class='metric-card'><h3>📄 Total</h3><h2>{total}</h2></div>", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <h4>📄 Total Records</h4>
+                    <h2>{total}</h2>
+                </div>
+                """, unsafe_allow_html=True)
 
             with c2:
-                st.markdown(f"<div class='metric-card'><h3>✅ Matched</h3><h2>{matched}</h2></div>", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <h4>✅ Matched</h4>
+                    <h2>{matched}</h2>
+                    <p style='color:green'>{match_pct:.1f}%</p>
+                </div>
+                """, unsafe_allow_html=True)
 
             with c3:
-                st.markdown(f"<div class='metric-card'><h3>❌ Unmatched</h3><h2>{unmatched}</h2></div>", unsafe_allow_html=True)
+                st.markdown(f"""
+                <div class='metric-card'>
+                    <h4>❌ Unmatched</h4>
+                    <h2>{unmatched}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+
+            st.divider()
+
+            # ---------------- CHART ----------------
+            st.subheader("📈 Match Overview")
+
+            chart_data = pd.DataFrame({
+                "Status": ["Matched", "Unmatched"],
+                "Count": [matched, unmatched]
+            })
+
+            st.bar_chart(chart_data.set_index("Status"))
 
             st.divider()
 
             # ---------------- TABLE ----------------
             st.subheader("📋 Detailed Results")
-            st.dataframe(result_df, use_container_width=True, height=500)
+
+            def highlight_rows(row):
+                if "match" in str(row["Match_Status"]).lower():
+                    return ["background-color: #e6ffed"] * len(row)
+                else:
+                    return ["background-color: #ffe6e6"] * len(row)
+
+            st.dataframe(
+                result_df.style.apply(highlight_rows, axis=1),
+                use_container_width=True,
+                height=500
+            )
 
             st.divider()
 
@@ -144,3 +217,11 @@ if gst_file and pur_file:
 
 else:
     st.info("👆 Please upload both files to start reconciliation.")
+
+# ---------------- FOOTER ----------------
+st.markdown("""
+<hr>
+<p style='text-align:center;color:gray;font-size:14px;'>
+GST Reco Pro • Built with Streamlit 🚀
+</p>
+""", unsafe_allow_html=True)
