@@ -1,324 +1,89 @@
 import streamlit as st
+import pandas as pd
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>GST Reconciliation Dashboard</title>
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="GST Reconciliation Dashboard",
+    page_icon="📘",
+    layout="wide"
+)
 
-<!-- XLSX Library -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+# ---------------- HEADER ----------------
+st.markdown("""
+    <h1 style='text-align: center; color: #1f4e79;'>
+        📘 GST Reconciliation Dashboard
+    </h1>
+    <p style='text-align: center;'>
+        Smart comparison of GSTR-2B & Purchase Register
+    </p>
+""", unsafe_allow_html=True)
 
-<style>
-body {
-  font-family: Arial;
-  background: #f4f7fb;
-  margin: 0;
-}
+# ---------------- FILE UPLOAD ----------------
+col1, col2 = st.columns(2)
 
-/* HEADER */
-.header {
-  background: linear-gradient(90deg, #1f4e79, #4fa3d1);
-  color: white;
-  padding: 25px;
-  text-align: center;
-}
+with col1:
+    gst_file = st.file_uploader("📄 Upload GSTR-2B", type=["xlsx"])
 
-/* UPLOAD */
-.upload-container {
-  display: flex;
-  justify-content: space-around;
-  margin: 30px;
-  flex-wrap: wrap;
-}
+with col2:
+    purchase_file = st.file_uploader("📄 Upload Purchase Register", type=["xlsx"])
 
-.upload-box {
-  background: white;
-  padding: 25px;
-  border-radius: 12px;
-  border: 2px dashed #ccc;
-  text-align: center;
-  width: 40%;
-  min-width: 280px;
-  transition: 0.3s;
-}
+# ---------------- PROCESS FUNCTION ----------------
+def process_reco(gst, books):
+    result = gst.copy()
 
-.upload-box:hover {
-  border-color: #1f77b4;
-  background: #f0f8ff;
-}
+    result["Match_Status"] = result["Invoice"].isin(books["Invoice"]).map({
+        True: "Matched",
+        False: "Unmatched"
+    })
 
-/* BUTTON */
-.center {
-  text-align: center;
-  margin: 20px;
-}
+    return result
 
-button {
-  padding: 12px 25px;
-  border: none;
-  border-radius: 10px;
-  background: linear-gradient(90deg, #1f77b4, #4fa3d1);
-  color: white;
-  font-weight: bold;
-  cursor: pointer;
-  transition: 0.3s;
-}
+# ---------------- RUN BUTTON ----------------
+if st.button("🚀 Run Reconciliation"):
 
-button:hover {
-  transform: scale(1.05);
-}
+    if gst_file is None or purchase_file is None:
+        st.error("❗ Please upload both files")
+    else:
+        with st.spinner("Processing..."):
 
-/* PROGRESS */
-.progress-container {
-  width: 80%;
-  margin: auto;
-  background: #ddd;
-  border-radius: 10px;
-  overflow: hidden;
-}
+            gst = pd.read_excel(gst_file)
+            books = pd.read_excel(purchase_file)
 
-#progressBar {
-  width: 0%;
-  height: 15px;
-  background: linear-gradient(90deg, #28a745, #5cd65c);
-  transition: width 0.3s;
-}
+            result = process_reco(gst, books)
 
-/* CARDS */
-.cards {
-  display: flex;
-  justify-content: space-around;
-  margin: 30px;
-  flex-wrap: wrap;
-}
+        # ---------------- SUMMARY ----------------
+        total = len(result)
+        matched = (result["Match_Status"] == "Matched").sum()
+        unmatched = total - matched
+        pct = (matched / total * 100) if total > 0 else 0
 
-.card {
-  background: white;
-  padding: 20px;
-  border-radius: 12px;
-  width: 25%;
-  min-width: 250px;
-  text-align: center;
-  box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
-  margin: 10px;
-}
+        st.markdown("## 📊 Summary")
 
-/* TABLE */
-.table-container {
-  margin: 30px;
-  overflow-x: auto;
-}
+        c1, c2, c3 = st.columns(3)
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: white;
-}
+        c1.metric("📄 Total Records", total)
+        c2.metric("✅ Matched", matched, f"{pct:.1f}%")
+        c3.metric("❌ Unmatched", unmatched)
 
-th, td {
-  padding: 10px;
-  border: 1px solid #ddd;
-}
+        # ---------------- TABLE ----------------
+        st.markdown("## 📋 Detailed Results")
 
-th {
-  background: #1f4e79;
-  color: white;
-}
+        def highlight(row):
+            if row["Match_Status"] == "Matched":
+                return ["background-color: #e6ffed"] * len(row)
+            else:
+                return ["background-color: #ffe6e6"] * len(row)
 
-.match {
-  background-color: #e6ffed;
-}
+        styled_df = result.style.apply(highlight, axis=1)
 
-.unmatch {
-  background-color: #ffe6e6;
-}
+        st.dataframe(styled_df, use_container_width=True)
 
-footer {
-  text-align: center;
-  color: gray;
-  margin: 20px;
-}
-</style>
-</head>
+        # ---------------- DOWNLOAD ----------------
+        csv = result.to_csv(index=False).encode("utf-8")
 
-<body>
-
-<!-- HEADER -->
-<div class="header">
-  <h1>📘 GST Reconciliation Dashboard</h1>
-  <p>Smart comparison of GSTR-2B & Purchase Register</p>
-</div>
-
-<!-- UPLOAD -->
-<div class="upload-container">
-  <div class="upload-box">
-    <h3>📄 Upload GSTR-2B</h3>
-    <input type="file" id="gstFile">
-  </div>
-
-  <div class="upload-box">
-    <h3>📄 Upload Purchase Register</h3>
-    <input type="file" id="purchaseFile">
-  </div>
-</div>
-
-<!-- BUTTON -->
-<div class="center">
-  <button onclick="runReco()">🚀 Run Reconciliation</button>
-</div>
-
-<!-- PROGRESS -->
-<div class="progress-container">
-  <div id="progressBar"></div>
-</div>
-
-<!-- SUMMARY -->
-<div class="cards">
-  <div class="card">
-    <h4>📄 Total Records</h4>
-    <h2 id="total">0</h2>
-  </div>
-
-  <div class="card">
-    <h4>✅ Matched</h4>
-    <h2 id="matched">0</h2>
-    <p id="pct"></p>
-  </div>
-
-  <div class="card">
-    <h4>❌ Unmatched</h4>
-    <h2 id="unmatched">0</h2>
-  </div>
-</div>
-
-<!-- TABLE -->
-<div class="table-container">
-  <h3>📋 Detailed Results</h3>
-  <table id="table">
-    <thead></thead>
-    <tbody></tbody>
-  </table>
-</div>
-
-<!-- DOWNLOAD -->
-<div class="center">
-  <button onclick="downloadExcel()">⬇️ Download Excel</button>
-</div>
-
-<footer>
-GST Reco Pro • Built with HTML + JS 🚀
-</footer>
-
-<script>
-let resultData = [];
-
-// READ EXCEL
-function readExcel(file) {
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target.result);
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      resolve(XLSX.utils.sheet_to_json(sheet));
-    };
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-// RUN RECO
-async function runReco() {
-  const gstFile = document.getElementById("gstFile").files[0];
-  const purchaseFile = document.getElementById("purchaseFile").files[0];
-
-  if (!gstFile || !purchaseFile) {
-    alert("Please upload both files ❗");
-    return;
-  }
-
-  // Progress animation
-  let progress = 0;
-  const bar = document.getElementById("progressBar");
-
-  const interval = setInterval(() => {
-    progress += 20;
-    bar.style.width = progress + "%";
-    if (progress >= 100) clearInterval(interval);
-  }, 200);
-
-  const gst = await readExcel(gstFile);
-  const books = await readExcel(purchaseFile);
-
-  resultData = processReco(gst, books);
-
-  renderSummary();
-  renderTable();
-}
-
-// SIMPLE MATCH LOGIC
-function processReco(gst, books) {
-  return gst.map(g => {
-    const match = books.find(b => b.Invoice === g.Invoice);
-    return {
-      ...g,
-      Match_Status: match ? "Matched" : "Unmatched"
-    };
-  });
-}
-
-// SUMMARY
-function renderSummary() {
-  const total = resultData.length;
-  const matched = resultData.filter(d => d.Match_Status === "Matched").length;
-  const unmatched = total - matched;
-  const pct = total ? ((matched / total) * 100).toFixed(1) : 0;
-
-  document.getElementById("total").innerText = total;
-  document.getElementById("matched").innerText = matched;
-  document.getElementById("unmatched").innerText = unmatched;
-  document.getElementById("pct").innerText = pct + "%";
-}
-
-// TABLE
-function renderTable() {
-  const tableHead = document.querySelector("#table thead");
-  const tableBody = document.querySelector("#table tbody");
-
-  tableHead.innerHTML = "";
-  tableBody.innerHTML = "";
-
-  if (resultData.length === 0) return;
-
-  const headers = Object.keys(resultData[0]);
-
-  let headRow = "<tr>";
-  headers.forEach(h => headRow += `<th>${h}</th>`);
-  headRow += "</tr>";
-  tableHead.innerHTML = headRow;
-
-  resultData.forEach(row => {
-    let tr = `<tr class="${row.Match_Status === 'Matched' ? 'match' : 'unmatch'}">`;
-    headers.forEach(h => tr += `<td>${row[h]}</td>`);
-    tr += "</tr>";
-    tableBody.innerHTML += tr;
-  });
-}
-
-// DOWNLOAD
-function downloadExcel() {
-  if (resultData.length === 0) {
-    alert("No data to download ❗");
-    return;
-  }
-
-  const ws = XLSX.utils.json_to_sheet(resultData);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Reco");
-
-  XLSX.writeFile(wb, "GST_Reconciliation.xlsx");
-}
-</script>
-
-</body>
-</html>
+        st.download_button(
+            label="⬇️ Download Results",
+            data=csv,
+            file_name="GST_Reconciliation.csv",
+            mime="text/csv"
+        )
