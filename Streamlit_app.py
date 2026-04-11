@@ -10,56 +10,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---------------- CUSTOM CSS ----------------
-st.markdown("""
-<style>
-.main {
-    background-color: #f7f9fc;
-}
-h1 {
-    color: #1f4e79;
-}
-.block-container {
-    padding-top: 2rem;
-}
-
-.metric-card {
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    box-shadow: 0px 4px 12px rgba(0,0,0,0.05);
-    text-align: center;
-}
-
-.upload-box {
-    background: white;
-    padding: 20px;
-    border-radius: 12px;
-    border: 2px dashed #d0d7e2;
-    text-align: center;
-}
-
-button[kind="primary"] {
-    background-color: #1f77b4;
-    border-radius: 10px;
-    height: 3em;
-    font-weight: bold;
-}
-
-.stDownloadButton button {
-    background-color: #28a745 !important;
-    color: white !important;
-    border-radius: 10px;
-    height: 3em;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
-
 # ---------------- HEADER ----------------
 st.markdown("""
-<h1>📘 GST Reconciliation Dashboard</h1>
-<p style='color:gray;font-size:16px;'>Compare GSTR-2B with Purchase Register easily</p>
+    <h1 style='margin-bottom:5px;'>📘 GST Reconciliation Dashboard</h1>
+    <p style='color:gray;'>Compare GSTR-2B with Purchase Register</p>
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -70,14 +24,10 @@ st.subheader("📂 Upload Files")
 col1, col2 = st.columns(2)
 
 with col1:
-    st.markdown("<div class='upload-box'>", unsafe_allow_html=True)
-    gst_file = st.file_uploader("📄 Upload GSTR-2B Excel", type=["xlsx"])
-    st.markdown("</div>", unsafe_allow_html=True)
+    gst_file = st.file_uploader("Upload GSTR-2B Excel", type=["xlsx"])
 
 with col2:
-    st.markdown("<div class='upload-box'>", unsafe_allow_html=True)
-    pur_file = st.file_uploader("📄 Upload Purchase Register Excel", type=["xlsx"])
-    st.markdown("</div>", unsafe_allow_html=True)
+    pur_file = st.file_uploader("Upload Purchase Register Excel", type=["xlsx"])
 
 st.divider()
 
@@ -107,20 +57,16 @@ if gst_file and pur_file:
 
             c1, c2, c3 = st.columns(3)
 
-            with c1:
-                st.markdown(f"<div class='metric-card'><h3>📄 Total</h3><h2>{total}</h2></div>", unsafe_allow_html=True)
-
-            with c2:
-                st.markdown(f"<div class='metric-card'><h3>✅ Matched</h3><h2>{matched}</h2></div>", unsafe_allow_html=True)
-
-            with c3:
-                st.markdown(f"<div class='metric-card'><h3>❌ Unmatched</h3><h2>{unmatched}</h2></div>", unsafe_allow_html=True)
+            c1.metric("📄 Total Records", total)
+            c2.metric("✅ Matched", matched)
+            c3.metric("❌ Unmatched", unmatched)
 
             st.divider()
 
             # ---------------- TABLE ----------------
             st.subheader("📋 Detailed Results")
-            st.dataframe(result_df, use_container_width=True, height=500)
+
+            st.dataframe(result_df, use_container_width=True)
 
             st.divider()
 
@@ -132,7 +78,7 @@ if gst_file and pur_file:
                 result_df.to_excel(writer, index=False)
 
             st.download_button(
-                "⬇️ Download Excel Report",
+                "⬇️ Download Excel",
                 data=output.getvalue(),
                 file_name="GST_Reconciliation.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
