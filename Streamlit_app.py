@@ -1,3 +1,5 @@
+import streamlit as st
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
