@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import io
-import reconciliation_logic as reco_logic
+import reco_logic as reco_logic
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(
