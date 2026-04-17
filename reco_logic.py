@@ -28,13 +28,6 @@ def normalize_doc(series):
 
 
 # -------------------------------------------------
-def validate_columns(df, required_cols, df_name):
-    missing = [col for col in required_cols if col not in df.columns]
-    if missing:
-        raise ValueError(f"{df_name} missing columns: {missing}")
-
-
-# -------------------------------------------------
 def compute_diffs(df):
     df["IGST Diff"] = df["IGST Amount_PUR"] - df["IGST Amount_2B"]
     df["CGST Diff"] = df["CGST Amount_PUR"] - df["CGST Amount_2B"]
@@ -43,9 +36,7 @@ def compute_diffs(df):
 
 
 # -------------------------------------------------
-# SAFE COPY FUNCTION (no logic change)
 def copy_data(merged, left_idx, right_idx):
-
     cols = [
         "Reference Document No.",
         "FI Document Number",
@@ -113,7 +104,7 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
         indicator=True,
     )
 
-    # ✅ FIXED FILLNA (SAFE)
+    # ✅ SAFE FILL
     numeric_cols = merged.select_dtypes(include=[np.number]).columns
     merged[numeric_cols] = merged[numeric_cols].fillna(0)
 
@@ -135,11 +126,16 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
 
     for left_idx in open_2b.index:
 
-        left_doc = str(merged.at[left_idx, "Document Number"])
+        left_doc = str(merged.at[left_idx, "Document Number"])  # ✅ FIX
+
+        candidate_dict = dict(zip(
+            open_books.index,
+            open_books["Reference Document No."].astype(str)  # ✅ FIX
+        ))
 
         match = process.extractOne(
             left_doc,
-            dict(zip(open_books.index, open_books["Reference Document No."])),
+            candidate_dict,
             scorer=fuzz.partial_token_set_ratio,
             score_cutoff=doc_threshold
         )
@@ -170,8 +166,8 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
             break
 
     # ---------------- PAN MATCH ----------------
-    merged["PAN_2B"] = merged["Supplier GSTIN"].str[2:12]
-    merged["PAN_PUR"] = merged["Vendor/Customer GSTIN"].str[2:12]
+    merged["PAN_2B"] = merged["Supplier GSTIN"].astype(str).str[2:12]
+    merged["PAN_PUR"] = merged["Vendor/Customer GSTIN"].astype(str).str[2:12]
 
     for left_idx in merged.index:
         if merged.at[left_idx, "Match_Status"] != MATCH_OPEN_2B:
