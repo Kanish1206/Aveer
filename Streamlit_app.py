@@ -1,89 +1,92 @@
 import streamlit as st
 import pandas as pd
+import io
+import reconciliation_logic as reco_logic
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(
-    page_title="GST Reconciliation Dashboard",
+    page_title="GST Reco Pro",
     page_icon="📘",
     layout="wide"
 )
 
 # ---------------- HEADER ----------------
 st.markdown("""
-    <h1 style='text-align: center; color: #1f4e79;'>
-        📘 GST Reconciliation Dashboard
-    </h1>
-    <p style='text-align: center;'>
-        Smart comparison of GSTR-2B & Purchase Register
-    </p>
+    <h1 style='margin-bottom:5px;'>📘 GST Reconciliation Dashboard (Aveer Food)</h1>
+    <p style='color:gray;'>Compare GSTR-2B with Purchase Register</p>
 """, unsafe_allow_html=True)
 
+st.divider()
+
 # ---------------- FILE UPLOAD ----------------
+st.subheader("📂 Upload Files")
+
 col1, col2 = st.columns(2)
 
 with col1:
-    gst_file = st.file_uploader("📄 Upload GSTR-2B", type=["xlsx"])
+    gst_file = st.file_uploader("Upload GSTR-2B Excel", type=["xlsx"])
 
 with col2:
-    purchase_file = st.file_uploader("📄 Upload Purchase Register", type=["xlsx"])
+    pur_file = st.file_uploader("Upload Purchase Register Excel", type=["xlsx"])
 
-# ---------------- PROCESS FUNCTION ----------------
-def process_reco(gst, books):
-    result = gst.copy()
+st.divider()
 
-    result["Match_Status"] = result["Invoice"].isin(books["Invoice"]).map({
-        True: "Matched",
-        False: "Unmatched"
-    })
+# ---------------- MAIN LOGIC ----------------
+if gst_file and pur_file:
 
-    return result
+    try:
+        df_2b = pd.read_excel(gst_file)
+        df_books = pd.read_excel(pur_file)
 
-# ---------------- RUN BUTTON ----------------
-if st.button("🚀 Run Reconciliation"):
+        df_2b.columns = df_2b.columns.str.strip()
+        df_books.columns = df_books.columns.str.strip()
 
-    if gst_file is None or purchase_file is None:
-        st.error("❗ Please upload both files")
-    else:
-        with st.spinner("Processing..."):
+        st.success("✅ Files uploaded successfully")
 
-            gst = pd.read_excel(gst_file)
-            books = pd.read_excel(purchase_file)
+        if st.button("🚀 Run Reconciliation", use_container_width=True):
 
-            result = process_reco(gst, books)
+            with st.spinner("Processing reconciliation... ⏳"):
+                result_df = reco_logic.process_reco(df_2b, df_books)
 
-        # ---------------- SUMMARY ----------------
-        total = len(result)
-        matched = (result["Match_Status"] == "Matched").sum()
-        unmatched = total - matched
-        pct = (matched / total * 100) if total > 0 else 0
+            # ---------------- SUMMARY ----------------
+            st.subheader("📊 Summary")
 
-        st.markdown("## 📊 Summary")
+            total = len(result_df)
+            matched = result_df["Match_Status"].str.contains("Match", case=False, na=False).sum()
+            unmatched = total - matched
 
-        c1, c2, c3 = st.columns(3)
+            c1, c2, c3 = st.columns(3)
 
-        c1.metric("📄 Total Records", total)
-        c2.metric("✅ Matched", matched, f"{pct:.1f}%")
-        c3.metric("❌ Unmatched", unmatched)
+            c1.metric("📄 Total Records", total)
+            c2.metric("✅ Matched", matched)
+            c3.metric("❌ Unmatched", unmatched)
 
-        # ---------------- TABLE ----------------
-        st.markdown("## 📋 Detailed Results")
+            st.divider()
 
-        def highlight(row):
-            if row["Match_Status"] == "Matched":
-                return ["background-color: #e6ffed"] * len(row)
-            else:
-                return ["background-color: #ffe6e6"] * len(row)
+            # ---------------- TABLE ----------------
+            st.subheader("📋 Detailed Results")
 
-        styled_df = result.style.apply(highlight, axis=1)
+            st.dataframe(result_df, use_container_width=True)
 
-        st.dataframe(styled_df, use_container_width=True)
+            st.divider()
 
-        # ---------------- DOWNLOAD ----------------
-        csv = result.to_csv(index=False).encode("utf-8")
+            # ---------------- DOWNLOAD ----------------
+            st.subheader("📥 Download Report")
 
-        st.download_button(
-            label="⬇️ Download Results",
-            data=csv,
-            file_name="GST_Reconciliation.csv",
-            mime="text/csv"
-        )
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+                result_df.to_excel(writer, index=False)
+
+            st.download_button(
+                "⬇️ Download Excel",
+                data=output.getvalue(),
+                file_name="GST_Reconciliation.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+    except Exception as e:
+        st.error(f"❌ Error: {str(e)}")
+
+else:
+    st.info("👆 Please upload both files to start reconciliation.")
