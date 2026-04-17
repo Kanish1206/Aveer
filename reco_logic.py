@@ -104,7 +104,7 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
         indicator=True,
     )
 
-    # SAFE FILL (already correct — kept as-is)
+    # SAFE FILL
     numeric_cols = merged.select_dtypes(include=[np.number]).columns
     merged[numeric_cols] = merged[numeric_cols].fillna(0)
 
@@ -120,17 +120,63 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
     merged.loc[merged["_merge"] == "left_only", "Match_Status"] = MATCH_OPEN_2B
     merged.loc[merged["_merge"] == "right_only", "Match_Status"] = MATCH_OPEN_BOOKS
 
-    # ---------------- FUZZY ----------------
+    # =================================================
+    # ✅ 1️⃣ GSTIN MISMATCH (FIRST PRIORITY AFTER EXACT)
+    # =================================================
+    open_2b = merged[merged["Match_Status"] == MATCH_OPEN_2B]
+    open_books = merged[merged["Match_Status"] == MATCH_OPEN_BOOKS]
+
+    for left_idx in open_2b.index:
+        doc = merged.at[left_idx, "doc_norm"]
+
+        candidates = open_books[open_books["doc_norm"] == doc]
+
+        for right_idx in candidates.index:
+            copy_data(merged, left_idx, right_idx)
+
+            merged.at[left_idx, "Match_Status"] = MATCH_GSTIN_MISMATCH
+            merged.at[right_idx, "Match_Status"] = MATCH_GSTIN_MISMATCH
+            break
+
+    # =================================================
+    # ✅ 2️⃣ PAN MATCH
+    # =================================================
+    merged["PAN_2B"] = merged["Supplier GSTIN"].astype(str).str[2:12]
+    merged["PAN_PUR"] = merged["Vendor/Customer GSTIN"].astype(str).str[2:12]
+
     open_2b = merged[merged["Match_Status"] == MATCH_OPEN_2B]
     open_books = merged[merged["Match_Status"] == MATCH_OPEN_BOOKS]
 
     for left_idx in open_2b.index:
 
-        left_doc = str(merged.at[left_idx, "Document Number"])  # ✅ FIX
+        pan = merged.at[left_idx, "PAN_2B"]
+        doc = merged.at[left_idx, "doc_norm"]
+
+        candidates = open_books[
+            (open_books["PAN_PUR"] == pan) &
+            (open_books["doc_norm"] == doc)
+        ]
+
+        for right_idx in candidates.index:
+            copy_data(merged, left_idx, right_idx)
+
+            merged.at[left_idx, "Match_Status"] = MATCH_PAN
+            merged.at[right_idx, "Match_Status"] = MATCH_PAN_CONSUMED
+            break
+
+    # =================================================
+    # ✅ 3️⃣ FUZZY (LAST)
+    # =================================================
+    open_2b = merged[merged["Match_Status"] == MATCH_OPEN_2B]
+    open_books = merged[merged["Match_Status"] == MATCH_OPEN_BOOKS]
+
+    for left_idx in open_2b.index:
+
+        left_doc = str(merged.at[left_idx, "Document Number"])
 
         candidate_dict = dict(zip(
             open_books.index,
-            open_books["Reference Document No."].astype(str)  # ✅ FIX
+            open_books["Reference Document No."].astype(str)
         ))
 
         match = process.extractOne(
@@ -148,46 +194,6 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
             merged.at[left_idx, "Match_Status"] = MATCH_FUZZY
             merged.at[left_idx, "Fuzzy Score"] = score
             merged.at[right_idx, "Match_Status"] = MATCH_FUZZY_CONSUMED
-
-    # ---------------- GSTIN MISMATCH ----------------
-    open_2b = merged[merged["Match_Status"] == MATCH_OPEN_2B]
-    open_books = merged[merged["Match_Status"] == MATCH_OPEN_BOOKS]
-
-    for left_idx in open_2b.index:
-        doc = merged.at[left_idx, "doc_norm"]
-
-        candidates = open_books[open_books["doc_norm"] == doc]
-
-        for right_idx in candidates.index:
-            copy_data(merged, left_idx, right_idx)
-
-            merged.at[left_idx, "Match_Status"] = MATCH_GSTIN_MISMATCH
-            merged.at[right_idx, "Match_Status"] = MATCH_GSTIN_MISMATCH
-            break
-
-    # ---------------- PAN MATCH ----------------
-    merged["PAN_2B"] = merged["Supplier GSTIN"].astype(str).str[2:12]
-    merged["PAN_PUR"] = merged["Vendor/Customer GSTIN"].astype(str).str[2:12]
-
-    for left_idx in merged.index:
-        if merged.at[left_idx, "Match_Status"] != MATCH_OPEN_2B:
-            continue
-
-        pan = merged.at[left_idx, "PAN_2B"]
-        doc = merged.at[left_idx, "doc_norm"]
-
-        candidates = merged[
-            (merged["PAN_PUR"] == pan) &
-            (merged["doc_norm"] == doc) &
-            (merged["Match_Status"] == MATCH_OPEN_BOOKS)
-        ]
-
-        for right_idx in candidates.index:
-            copy_data(merged, left_idx, right_idx)
-
-            merged.at[left_idx, "Match_Status"] = MATCH_PAN
-            merged.at[right_idx, "Match_Status"] = MATCH_PAN_CONSUMED
-            break
 
     # ---------------- CLEAN ----------------
     merged = merged[~merged["Match_Status"].isin([
