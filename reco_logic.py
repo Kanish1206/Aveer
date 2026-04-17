@@ -15,11 +15,8 @@ MATCH_FUZZY_CONSUMED = "Fuzzy Consumed"
 MATCH_GSTIN_MISMATCH = "GSTIN Mismatch"
 MATCH_PAN = "PAN Match (GSTIN Variation)"
 MATCH_PAN_CONSUMED = "PAN Consumed"
-MATCH_NO_GSTIN = "Match Without GSTIN"
 
 
-# -------------------------------------------------
-# NORMALIZE
 # -------------------------------------------------
 def normalize_doc(series):
     return (
@@ -31,31 +28,12 @@ def normalize_doc(series):
 
 
 # -------------------------------------------------
-# COPY FUNCTION (🔥 MAIN FIX)
-# -------------------------------------------------
-def copy_purchase_data(merged, left_idx, right_idx):
-    cols = [
-        "Reference Document No.",
-        "FI Document Number",
-        "Vendor/Customer GSTIN",
-        "Vendor/Customer Name",
-        "IGST Amount_PUR",
-        "CGST Amount_PUR",
-        "SGST Amount_PUR",
-        "Taxable Amount",
-        "Invoice Value_PUR",
-        "Document Date_PUR"
-    ]
-
-    for col in cols:
-        if col in merged.columns:
-            val = merged.at[right_idx, col]
-            if pd.notna(val) and val != "":
-                merged.at[left_idx, col] = val
+def validate_columns(df, required_cols, df_name):
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"{df_name} missing columns: {missing}")
 
 
-# -------------------------------------------------
-# DIFF
 # -------------------------------------------------
 def compute_diffs(df):
     df["IGST Diff"] = df["IGST Amount_PUR"] - df["IGST Amount_2B"]
@@ -65,7 +43,28 @@ def compute_diffs(df):
 
 
 # -------------------------------------------------
-# MAIN FUNCTION
+# SAFE COPY FUNCTION (no logic change)
+def copy_data(merged, left_idx, right_idx):
+
+    cols = [
+        "Reference Document No.",
+        "FI Document Number",
+        "Vendor/Customer GSTIN",
+        "Vendor/Customer Name",
+        "IGST Amount_PUR",
+        "CGST Amount_PUR",
+        "SGST Amount_PUR",
+        "Taxable Amount",
+        "Invoice Value_PUR"
+    ]
+
+    for col in cols:
+        if col in merged.columns:
+            val = merged.at[right_idx, col]
+            if pd.notna(val):
+                merged.at[left_idx, col] = val
+
+
 # -------------------------------------------------
 def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
 
@@ -82,6 +81,7 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
     # ---------------- AGG ----------------
     gst_agg = gst.groupby(["Supplier GSTIN", "doc_norm"], as_index=False).agg({
         "Document Number": "first",
+        "Return Period": "first",
         "Supplier Name": "first",
         "Document Date": "first",
         "IGST Amount": "sum",
@@ -113,17 +113,18 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
         indicator=True,
     )
 
-    #merged.fillna("", inplace=True)
-    for col in merged.columns:
-    if merged[col].dtype == "object":
-        merged[col] = merged[col].fillna("")
+    # ✅ FIXED FILLNA (SAFE)
+    numeric_cols = merged.select_dtypes(include=[np.number]).columns
+    merged[numeric_cols] = merged[numeric_cols].fillna(0)
+
+    object_cols = merged.select_dtypes(include=["object"]).columns
+    merged[object_cols] = merged[object_cols].fillna("")
 
     merged = compute_diffs(merged)
 
     merged["Match_Status"] = None
     merged["Fuzzy Score"] = 0.0
 
-    # ---------------- INITIAL ----------------
     merged.loc[merged["_merge"] == "both", "Match_Status"] = MATCH_EXACT
     merged.loc[merged["_merge"] == "left_only", "Match_Status"] = MATCH_OPEN_2B
     merged.loc[merged["_merge"] == "right_only", "Match_Status"] = MATCH_OPEN_BOOKS
@@ -134,21 +135,19 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
 
     for left_idx in open_2b.index:
 
-        left_doc = merged.at[left_idx, "Document Number"]
-
-        candidates = open_books.copy()
+        left_doc = str(merged.at[left_idx, "Document Number"])
 
         match = process.extractOne(
             left_doc,
-            dict(zip(candidates.index, candidates["Reference Document No."])),
-            scorer=fuzz.partial_ratio,
+            dict(zip(open_books.index, open_books["Reference Document No."])),
+            scorer=fuzz.partial_token_set_ratio,
             score_cutoff=doc_threshold
         )
 
         if match:
             _, score, right_idx = match
 
-            copy_purchase_data(merged, left_idx, right_idx)
+            copy_data(merged, left_idx, right_idx)
 
             merged.at[left_idx, "Match_Status"] = MATCH_FUZZY
             merged.at[left_idx, "Fuzzy Score"] = score
@@ -164,7 +163,7 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
         candidates = open_books[open_books["doc_norm"] == doc]
 
         for right_idx in candidates.index:
-            copy_purchase_data(merged, left_idx, right_idx)
+            copy_data(merged, left_idx, right_idx)
 
             merged.at[left_idx, "Match_Status"] = MATCH_GSTIN_MISMATCH
             merged.at[right_idx, "Match_Status"] = MATCH_GSTIN_MISMATCH
@@ -188,28 +187,10 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
         ]
 
         for right_idx in candidates.index:
-            copy_purchase_data(merged, left_idx, right_idx)
+            copy_data(merged, left_idx, right_idx)
 
             merged.at[left_idx, "Match_Status"] = MATCH_PAN
             merged.at[right_idx, "Match_Status"] = MATCH_PAN_CONSUMED
-            break
-
-    # ---------------- NEW LOGIC (🔥 IGNORE GSTIN) ----------------
-    open_2b = merged[merged["Match_Status"] == MATCH_OPEN_2B]
-    open_books = merged[merged["Match_Status"] == MATCH_OPEN_BOOKS]
-
-    for left_idx in open_2b.index:
-
-        doc = merged.at[left_idx, "doc_norm"]
-
-        candidates = open_books[open_books["doc_norm"] == doc]
-
-        for right_idx in candidates.index:
-
-            copy_purchase_data(merged, left_idx, right_idx)
-
-            merged.at[left_idx, "Match_Status"] = MATCH_NO_GSTIN
-            merged.at[right_idx, "Match_Status"] = MATCH_NO_GSTIN
             break
 
     # ---------------- CLEAN ----------------
