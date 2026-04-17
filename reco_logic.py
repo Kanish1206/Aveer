@@ -358,13 +358,74 @@ def process_reco(
 
     # Drop helper columns
     merged.drop(columns=["PAN_2B", "PAN_PUR"], inplace=True, errors="ignore")
+    # ---------------- FINAL MATCH (IGNORE GSTIN) ----------------
+    open_2b_final = merged[merged["Match_Status"] == MATCH_OPEN_2B]
+    open_books_final = merged[merged["Match_Status"] == MATCH_OPEN_BOOKS]
+
+    for left_idx in open_2b_final.index:
+
+        doc_2b = merged.at[left_idx, "doc_norm"]
+        if not doc_2b:
+            continue
+
+        igst_2b = merged.at[left_idx, "IGST Amount_2B"]
+        cgst_2b = merged.at[left_idx, "CGST Amount_2B"]
+        sgst_2b = merged.at[left_idx, "SGST Amount_2B"]
+
+        # 🔍 Ignore GSTIN → match only on doc + tax
+        candidates = open_books_final[
+            open_books_final["doc_norm"] == doc_2b
+        ].copy()
+
+        if candidates.empty:
+            continue
+
+        # Compute tax difference
+        candidates["tax_diff"] = (
+            (candidates["IGST Amount_PUR"] - igst_2b).abs() +
+            (candidates["CGST Amount_PUR"] - cgst_2b).abs() +
+            (candidates["SGST Amount_PUR"] - sgst_2b).abs()
+        )
+
+        # Sort best match
+        candidates = candidates.sort_values("tax_diff")
+
+        for right_idx in candidates.index:
+
+            if candidates.at[right_idx, "tax_diff"] > tax_tolerance * 3:
+                continue
+
+            # ✅ Assign new status
+            merged.at[left_idx, "Match_Status"] = "Doc Match (Ignore GSTIN)"
+            merged.at[right_idx, "Match_Status"] = "Doc Consumed (Ignore GSTIN)"
+
+            # ✅ Copy purchase data
+            pur_cols = [col for col in merged.columns if col.endswith("_PUR") or col in [
+                "Reference Document No.",
+                "FI Document Number",
+                "Vendor/Customer Name",
+                "Vendor/Customer GSTIN"
+            ]]
+
+            for col in pur_cols:
+                if col in merged.columns:
+                    merged.at[left_idx, col] = merged.at[right_idx, col]
+
+            # Remove matched row from further matching
+            open_books_final = open_books_final.drop(index=right_idx)
+
+            break
 
     # ---------------- CLEANUP ----------------
+    #merged = merged[~merged["Match_Status"].isin([
+        #MATCH_FUZZY_CONSUMED,
+        #MATCH_PAN_CONSUMED
+    #])]
     merged = merged[~merged["Match_Status"].isin([
-        MATCH_FUZZY_CONSUMED,
-        MATCH_PAN_CONSUMED
+    MATCH_FUZZY_CONSUMED,
+    MATCH_PAN_CONSUMED,
+    "Doc Consumed (Ignore GSTIN)"
     ])]
-
     merged = compute_diffs(merged)
     merged.drop(columns=["_merge"], inplace=True, errors="ignore")
     priority_cols = [
