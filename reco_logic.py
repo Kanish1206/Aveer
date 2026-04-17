@@ -104,7 +104,7 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
         indicator=True,
     )
 
-    # ✅ SAFE FILL
+    # SAFE FILL (already correct — kept as-is)
     numeric_cols = merged.select_dtypes(include=[np.number]).columns
     merged[numeric_cols] = merged[numeric_cols].fillna(0)
 
