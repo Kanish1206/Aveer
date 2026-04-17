@@ -82,7 +82,7 @@ def process_reco(
 
     pur_required = [
         "GSTIN Of Vendor/Customer", "Reference Document No.",
-        "Taxable Amount", "Document Date", "Cons",
+        "Taxable Amount", "Document Date",
         "Vendor/Customer Name", "IGST Amount", "CGST Amount",
         "SGST Amount", "Invoice Value", "Invoice Type"
     ]
@@ -101,7 +101,7 @@ def process_reco(
 
     # ---------------- AGGREGATION ----------------
     gst_agg = gst.groupby(
-        ["Supplier GSTIN", "doc_norm", "Document Type"], as_index=False
+        ["Supplier GSTIN", "doc_norm","Document Type"], as_index=False 
     ).agg({
         "Document Number": "first",
         "Return Period": "first",
@@ -112,8 +112,7 @@ def process_reco(
         "SGST Amount": "sum",
         "Taxable Value": "sum",
         "Invoice Value": "sum",
-    })
-
+    }) 
     pur_agg = pur.groupby(
         ["Supplier GSTIN", "doc_norm", "Document Type"], as_index=False
     ).agg({
@@ -127,7 +126,7 @@ def process_reco(
         "CGST Amount": "sum",
         "SGST Amount": "sum",
         "Invoice Value": "sum",
-    })
+    }) 
 
     # ---------------- MERGE ----------------
     merged = gst_agg.merge(
@@ -136,7 +135,7 @@ def process_reco(
         how="outer",
         suffixes=["_2B", "_PUR"],
         indicator=True,
-    )
+    ) #
 
     # ---------------- NUMERIC CLEAN ----------------
     numeric_cols = [
@@ -219,6 +218,7 @@ def process_reco(
 
                 for col in [
                     "Reference Document No.",
+                    "FI Document Number",
                     "Vendor/Customer GSTIN",
                     "Vendor/Customer Name",
                     "IGST Amount_PUR",
@@ -339,7 +339,7 @@ def process_reco(
 
             # ✅ Copy purchase data (IMPORTANT FIX)
             pur_cols = [col for col in merged.columns if col.endswith("_PUR") or col in [
-                "Reference Document No.", "Vendor/Customer Name", "Vendor/Customer GSTIN"
+                "Reference Document No.","FI Document Number", "Vendor/Customer Name", "Vendor/Customer GSTIN"
             ]]
 
             for col in pur_cols:
