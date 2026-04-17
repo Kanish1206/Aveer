@@ -113,7 +113,10 @@ def process_reco(gst_df, pur_df, doc_threshold=60, tax_tolerance=10):
         indicator=True,
     )
 
-    merged.fillna("", inplace=True)
+    #merged.fillna("", inplace=True)
+    for col in merged.columns:
+    if merged[col].dtype == "object":
+        merged[col] = merged[col].fillna("")
 
     merged = compute_diffs(merged)
 
