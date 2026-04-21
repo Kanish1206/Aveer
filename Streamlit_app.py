@@ -93,7 +93,7 @@ st.markdown("""
 # ---------------- HEADER SECTION ----------------
 st.markdown("""
     <div class="hero-header animate-fade">
-        <h1 style='margin:0; font-size: 3rem; font-weight: 800; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);'>⚡ GST Intelligence Hub</h1>
+        <h1 style='margin:0; font-size: 3rem; font-weight: 800; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);'>⚡ GST Intelligence Hub (Aveer Food)</h1>
         <p style='margin:5px 0 0 0; font-size: 1.2rem; opacity: 0.9;'>Automated GSTR-2B vs Books Reconciliation</p>
     </div>
 """, unsafe_allow_html=True)
