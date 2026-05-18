@@ -63,7 +63,7 @@ def process_reco(
     # ---------------- VALIDATION ----------------
     gst_required = [
         "GSTIN of supplier", "Invoice number", "Invoice Date",
-        "Taxable Value (₹)", "Trade/Legal name", "Remark 2B",
+        "Taxable Value (₹)", "Trade/Legal name", "2B Month",
         "Integrated Tax(₹)", "Central Tax(₹)", "State/UT Tax(₹)", "Invoice Value(₹)"
     ]
     pur_required = [
@@ -92,7 +92,7 @@ def process_reco(
         "Invoice number": "first",
         "Trade/Legal name": "first",
         "Invoice Date": "first",
-        "Remark 2B": "first",
+        "2B Month": "first",
         "Integrated Tax(₹)": "sum",
         "Central Tax(₹)": "sum",
         "State/UT Tax(₹)": "sum",
@@ -407,7 +407,7 @@ def process_reco(
         "Return Period",
         "Trade/Legal name",
         "Invoice Date",
-        "Remark 2B",
+        "2B Month",
         "Integrated Tax(₹)",
         "Central Tax(₹)",
         "State/UT Tax(₹)",
