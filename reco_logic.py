@@ -64,35 +64,34 @@ def process_reco(
     pur = pur_df.copy()
 
     # ---------------- DOCUMENT TYPE ----------------
-    doc_type_map = {
-        "INVOICE": "R",
-        "CREDIT NOTE": "C",
-        "DEBIT NOTE": "D",
-    }
+    #doc_type_map = {
+        #"INVOICE": "R",
+        #"CREDIT NOTE": "C",
+        #"DEBIT NOTE": "D",
+    #}
 
     #pur["Document Type"] = pur["Invoice Type"].map(doc_type_map).fillna("UNKNOWN")
 
     # ---------------- VALIDATION ----------------
     gst_required = [
         "Supplier GSTIN", "Document Number", "Document Date",
-        "Return Period", "Taxable Value", "Supplier Name",
-        "IGST Amount", "CGST Amount", "SGST Amount", "Invoice Value",
+         "Taxable Value", "Supplier Name","Remark 2B",
+        "IGST Amount", "CGST Amount", "SGST Amount", "Invoice Value"
         
-    ] #"Document Type"
-
+    ] #,"Document Type""Return Period",
     pur_required = [
         "GSTIN Of Vendor/Customer", "Reference Document No.",
         "Taxable Amount", "Document Date",
         "Vendor/Customer Name", "IGST Amount", "CGST Amount",
         "SGST Amount", "Invoice Value"
-    ] #, "Invoice Type"
+    ] # "Invoice Type"
 
     validate_columns(gst, gst_required, "2B File")
     validate_columns(pur, pur_required, "Purchase File")
 
     # ---------------- PREP ----------------
     pur["Vendor/Customer GSTIN"] = pur["GSTIN Of Vendor/Customer"]
-    gst["Return Period"] = gst["Return Period"].astype(str)
+    #gst["Return Period"] = gst["Return Period"].astype(str)
 
     gst["doc_norm"] = normalize_doc(gst["Document Number"])
     pur["doc_norm"] = normalize_doc(pur["Reference Document No."])
@@ -104,15 +103,15 @@ def process_reco(
         ["Supplier GSTIN", "doc_norm"], as_index=False 
     ).agg({
         "Document Number": "first",
-        "Return Period": "first",
         "Supplier Name": "first",
         "Document Date": "first",
+        "Remark 2B":"first",
         "IGST Amount": "sum",
         "CGST Amount": "sum",
         "SGST Amount": "sum",
         "Taxable Value": "sum",
         "Invoice Value": "sum",
-    }) #,"Document Type"
+    }) #,"Document Type""Return Period": "first",
     pur_agg = pur.groupby(
         ["Supplier GSTIN", "doc_norm"], as_index=False
     ).agg({
@@ -436,6 +435,7 @@ def process_reco(
        "Return Period",
        "Supplier Name",
        "Document Date_2B",
+        "Remark 2B",
        "IGST Amount_2B",
        "CGST Amount_2B",
        "SGST Amount_2B",
